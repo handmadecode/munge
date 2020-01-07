@@ -1,0 +1,61 @@
+plugins
+{
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish' version '0.10.1'
+}
+
+group = 'org.myire'
+version = '1.0'
+
+repositories
+{
+    mavenCentral()
+    maven { url "https://plugins.gradle.org/m2/" }
+}
+
+dependencies
+{
+    implementation 'org.freemarker:freemarker:2.3.29'
+    implementation 'net.sf.saxon:Saxon-HE:9.9.1-6'
+
+    testImplementation 'junit:junit:4.12'
+}
+
+// Build for compatibility with Java 8
+tasks.withType(JavaCompile)
+{
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+// Generate the plugin descriptor and specify the plugin's id
+gradlePlugin
+{
+    plugins
+    {
+        mungePlugin
+        {
+            id = 'org.myire.munge'
+            implementationClass = 'org.myire.munge.MungePlugin'
+        }
+    }
+}
+
+// Declare the contents of the published artifact
+pluginBundle
+{
+    website = 'https://github.com/handmadecode/munge'
+    vcsUrl = 'https://github.com/handmadecode/munge'
+
+    description = 'A Gradle plugin for transforming XML files with XSL stylesheets and FreeMarker templates'
+
+    plugins
+    {
+        mungePlugin
+        {
+            displayName = 'Munge plugin'
+            description = 'Transform XML files with XSL stylesheets and FreeMarker templates'
+            tags = ['xml', 'transform', 'xsl', 'saxon', 'freemarker']
+        }
+    }
+}
