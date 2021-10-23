@@ -1,11 +1,11 @@
 plugins
 {
     id 'java-gradle-plugin'
-    id 'com.gradle.plugin-publish' version '0.10.1'
+    id 'com.gradle.plugin-publish' version '0.16.0'
 }
 
 group = 'org.myire'
-version = '1.0'
+version = '1.1'
 
 repositories
 {
@@ -15,10 +15,14 @@ repositories
 
 dependencies
 {
-    implementation 'org.freemarker:freemarker:2.3.29'
-    implementation 'net.sf.saxon:Saxon-HE:9.9.1-6'
+    // The runtime versions of the libraries are dynamically added to the configuration when the
+    // plugin is loaded
+    compileOnly 'org.freemarker:freemarker:2.3.31'
+    compileOnly 'net.sf.saxon:Saxon-HE:9.9.1-8'
 
-    testImplementation 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.13.2'
+    testRuntimeOnly 'org.freemarker:freemarker:2.3.31'
+    testRuntimeOnly 'net.sf.saxon:Saxon-HE:9.9.1-8'
 }
 
 // Build for compatibility with Java 8
