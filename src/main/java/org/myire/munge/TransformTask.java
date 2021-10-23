@@ -40,7 +40,9 @@ public class TransformTask extends DefaultTask
     private String fSaxonVersion = "9.9.1-8";
     private String fFreeMarkerVersion = "2.3.31";
     private String fXalanVersion;
-    private String fJaxenVersion;
+    private String fJaxenVersion ="1.2.0";
+    private boolean fXalanVersionExplicitlySet;
+    private boolean fJaxenVersionExplicitlySet;
 
     // Lazily created class loader for external classes used by the transformation sets.
     private TransformerClassLoader fTransformerClassLoader;
@@ -138,6 +140,9 @@ public class TransformTask extends DefaultTask
     public void setFreeMarkerVersion(String pFreeMarkerVersion)
     {
         fFreeMarkerVersion = pFreeMarkerVersion;
+
+        if (pFreeMarkerVersion == null && !fJaxenVersionExplicitlySet)
+            fJaxenVersion = null;
     }
 
 
@@ -157,11 +162,15 @@ public class TransformTask extends DefaultTask
     public void setXalanVersion(String pXalanVersion)
     {
         fXalanVersion = pXalanVersion;
+        fXalanVersionExplicitlySet = true;
+
+        if (!fJaxenVersionExplicitlySet)
+            fJaxenVersion = null;
     }
 
 
     /**
-     * Get the version of the Jaxen library to use. The default value is {@code null}.
+     * Get the version of the Jaxen library to use. The default value is &quot;1.2.0&quot;.
      *
      * @return  The version of the Jaxen library to use. Null means to disable the Jaxen library.
      */
@@ -176,6 +185,10 @@ public class TransformTask extends DefaultTask
     public void setJaxenVersion(String pJaxenVersion)
     {
         fJaxenVersion = pJaxenVersion;
+        fJaxenVersionExplicitlySet = true;
+
+        if (!fXalanVersionExplicitlySet)
+            fXalanVersion = null;
     }
 
 
