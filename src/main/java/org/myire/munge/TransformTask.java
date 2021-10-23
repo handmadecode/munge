@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Peter Franzen. All rights reserved.
+ * Copyright 2019, 2021 Peter Franzen. All rights reserved.
  *
  * Licensed under the Apache License v2.0: http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -14,6 +14,7 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.TaskAction;
 
 import org.myire.munge.transform.TransformationSet;
@@ -34,6 +35,16 @@ public class TransformTask extends DefaultTask
 
     private final List<TransformationSet> fTransformationSets = new ArrayList<>();
     private boolean fFailOnError;
+
+    // External library versions
+    private String fSaxonVersion = "9.9.1-8";
+    private String fFreeMarkerVersion = "2.3.31";
+    private String fXalanVersion;
+    private String fJaxenVersion;
+
+    // Lazily created class loader for external classes used by the transformation sets.
+    private TransformerClassLoader fTransformerClassLoader;
+
 
 
     /**
@@ -71,7 +82,7 @@ public class TransformTask extends DefaultTask
 
 
     /**
-     * Get the <i>fail on error property</i>. If this property is true, the {@link #transform()}
+     * Get the <i>fail on error</i> property. If this property is true, the {@link #transform()}
      * method will throw a {@code GradleException} if any transformation set reports a
      * transformation error. If this property is false, errors will only be logged. The default
      * value is false.
@@ -92,6 +103,83 @@ public class TransformTask extends DefaultTask
 
 
     /**
+     * Get the version of the Saxon library to use. The default value is &quot;9.9.1-8&quot;.
+     *
+     * @return  The version of the Saxon library to use. Null means to disable the Saxon library.
+     */
+    @Input
+    @Optional
+    public String getSaxonVersion()
+    {
+        return fSaxonVersion;
+    }
+
+
+    public void setSaxonVersion(String pSaxonVersion)
+    {
+        fSaxonVersion = pSaxonVersion;
+    }
+
+
+    /**
+     * Get the version of the FreeMarker library to use. The default value is &quot;2.3.31&quot;.
+     *
+     * @return  The version of the FreeMarker library to use. Null means to disable the FreeMarker
+     *          library.
+     */
+    @Input
+    @Optional
+    public String getFreeMarkerVersion()
+    {
+        return fFreeMarkerVersion;
+    }
+
+
+    public void setFreeMarkerVersion(String pFreeMarkerVersion)
+    {
+        fFreeMarkerVersion = pFreeMarkerVersion;
+    }
+
+
+    /**
+     * Get the version of the Xalan library to use. The default value is {@code null}.
+     *
+     * @return  The version of the Xalan library to use. Null means to disable the Xalan library.
+     */
+    @Input
+    @Optional
+    public String getXalanVersion()
+    {
+        return fXalanVersion;
+    }
+
+
+    public void setXalanVersion(String pXalanVersion)
+    {
+        fXalanVersion = pXalanVersion;
+    }
+
+
+    /**
+     * Get the version of the Jaxen library to use. The default value is {@code null}.
+     *
+     * @return  The version of the Jaxen library to use. Null means to disable the Jaxen library.
+     */
+    @Input
+    @Optional
+    public String getJaxenVersion()
+    {
+        return fJaxenVersion;
+    }
+
+
+    public void setJaxenVersion(String pJaxenVersion)
+    {
+        fJaxenVersion = pJaxenVersion;
+    }
+
+
+    /**
      * Execute the transformations specified in all transformation sets added to the task. The
      * transformations will be executed sequentially in the order they were added.
      *
@@ -103,9 +191,27 @@ public class TransformTask extends DefaultTask
     {
         int aNumErrors = 0;
         for (TransformationSet aTransformationSet : fTransformationSets)
-            aNumErrors += aTransformationSet.transform();
+            aNumErrors += aTransformationSet.transform(getTransformerClassLoader());
 
         if (aNumErrors > 0 && isFailOnError())
             throw new GradleException("There were " + aNumErrors + " transformation errors");
+    }
+
+
+    /**
+     * Get the class loader to load external transformation classes with, possibly creating the
+     * instance first.
+     *
+     * @return  The transformer class loader, never null.
+     */
+    private ClassLoader getTransformerClassLoader()
+    {
+        if (fTransformerClassLoader == null)
+        {
+            fTransformerClassLoader =
+                new TransformerClassLoader(getProject().getConfigurations());
+        }
+
+        return fTransformerClassLoader;
     }
 }

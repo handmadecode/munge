@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Peter Franzen. All rights reserved.
+ * Copyright 2019, 2021 Peter Franzen. All rights reserved.
  *
  * Licensed under the Apache License v2.0: http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -8,6 +8,7 @@ package org.myire.munge.transform;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +20,7 @@ import groovy.lang.Closure;
 import org.gradle.api.Project;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectories;
@@ -94,6 +96,8 @@ abstract public class TransformationSet
 {
     protected final Project fProject;
 
+    private File fConfigurationFile;
+
     private final FilesSpec fSourceFilesSpec = new FilesSpec();
     private final FilesSpec fTemplateFilesSpec = new FilesSpec();
 
@@ -118,6 +122,26 @@ abstract public class TransformationSet
     protected TransformationSet(Project pProject)
     {
         fProject = requireNonNull(pProject);
+    }
+
+
+    /**
+     * Get the file to configure the underlying transformer with before executing the
+     * transformations.
+     *
+     * @return  The configuration file, or null to use a default configuration.
+     */
+    @InputFile
+    @Optional
+    public File getConfigurationFile()
+    {
+        return fConfigurationFile;
+    }
+
+
+    public void setConfigurationFile(Object pFile)
+    {
+        fConfigurationFile = pFile != null ? fProject.file(pFile) : null;
     }
 
 
@@ -183,9 +207,9 @@ abstract public class TransformationSet
         {
             for (File aTemplateFile : getTemplateFiles())
             {
-                File aOutputFile = mapToOutputFile(aSourceFile, aTemplateFile);
+                OutputFileSpec aOutputFile = mapToOutputFile(aSourceFile, aTemplateFile);
                 if (aOutputFile != null)
-                    aFiles.add(aOutputFile);
+                    aFiles.add(aOutputFile.getFile());
             }
         }
 
@@ -418,15 +442,89 @@ abstract public class TransformationSet
      * each source file, and the result will be written to the output file specified by the output
      * mappings or the output directory/file.
      *
+     * @param pTransformerClassLoader   The class loader to load {@code Transformer} implementations
+     *                                  with.
+     *
      * @return  The number of errors encountered during the transformations.
      */
-    abstract public int transform();
+    public int transform(ClassLoader pTransformerClassLoader)
+    {
+        Transformer aTransformer = setupTransformer(pTransformerClassLoader);
+        if (aTransformer == null)
+            // Could not instantiate or configure the transformer, cannot execute the
+            // transformations, return one error.
+            return 1;
+
+        // Specify the parameters to be used in each transformation.
+        aTransformer.setTransformationParameters(getParameters());
+
+        // Load the source and template files.
+        int aNumErrors = aTransformer.loadSources(getSourceFiles());
+        aNumErrors += aTransformer.loadTemplates(getTemplateFiles());
+
+        // All output directed to the global output file is appended; it must be deleted before the
+        // first transformation.
+        deleteOutputFileIfExists();
+
+        // Execute each transformation.
+        aNumErrors += aTransformer.executeTransformations(this::mapToOutputFile);
+
+        return aNumErrors;
+    }
+
+
+    /**
+     * Create the {@code Transformer} instance associated with this transformer set.
+     *
+     * @param pClassLoader   The class loader with which to load the {@code Transformer}
+     *                       implementation class.
+     *
+     * @return  A new {@code Transformer} instance, never null.
+     *
+     * @throws ReflectiveOperationException if the {@code Transformer} implementation class isn't
+     *                                      available or cannot be instantiated.
+     */
+    abstract protected Transformer createTransformer(ClassLoader pClassLoader) throws ReflectiveOperationException;
+
+
+    /**
+     * Create a {@code Transformer} instance and configure it from the configuration file specified
+     * in the {@code configurationFile} property.
+     *
+     * @param pTransformerClassLoader   The class loader with which to load the {@code Transformer}
+     *                                  implementation class.
+     *
+     * @return  A new {@code Transformer} instance configured from the configuration file, or null
+     *          if an error occurred.
+     */
+    private Transformer setupTransformer(ClassLoader pTransformerClassLoader)
+    {
+        try
+        {
+            // Create a new instance of the Transformer implementation associated with this
+            // transformation set.
+            Transformer aTransformer = createTransformer(pTransformerClassLoader);
+
+            // Configure the transformer with the configuration file, a null file means that a
+            // default configuration should be used.
+            if (aTransformer.configure(fConfigurationFile))
+                return aTransformer;
+            else
+                // Invalid configuration file, cannot continue with the transformations.
+                return null;
+        }
+        catch (ReflectiveOperationException roe)
+        {
+            fProject.getLogger().error("Could not create a transformer instance", roe);
+            return null;
+        }
+    }
 
 
     /**
      * Delete the global output file if it has been specified and exists.
      */
-    protected void deleteOutputFileIfExists()
+    private void deleteOutputFileIfExists()
     {
         if (fOutputFile != null)
         {
@@ -452,53 +550,43 @@ abstract public class TransformationSet
      *
      * @return  The result from the first output mapping that returns a non-null result. If all
      *          mappings return null (or there are no mappings), a file with the same name as the
-     *          source file will be returned, but located in the output directory. Should no
-     *          output directory be specified, the output file (which may be null) is returned.
+     *          source file will be returned, but located in the output directory. If no output
+     *          directory is specified, the output file (which may be null) is returned.
      *
      * @throws NullPointerException if any of the parameters is null.
      */
-    protected File mapToOutputFile(File pSourceFile, File pTemplateFile)
+    private OutputFileSpec mapToOutputFile(File pSourceFile, File pTemplateFile)
     {
         for (Closure<?> aMapping : fOutputMappings)
         {
             Object aResult = aMapping.call(pSourceFile, pTemplateFile);
             if (aResult != null)
-                return fProject.file(aResult);
+                return createOutputFile(fProject.file(aResult));
         }
 
         if (fOutputDirectory != null)
-            return new File(fOutputDirectory, pSourceFile.getName());
+            return createOutputFile(new File(fOutputDirectory, pSourceFile.getName()));
 
-        return fOutputFile;
+        return createOutputFile(fOutputFile);
     }
 
 
     /**
-     * Log that a template file is applied to a source file to produce an output file.
+     * Create an {@code OutputFileSpec} for a file.
      *
-     * @param pSourceFile   The source file.
-     * @param pTemplateFile The template file.
-     * @param pOutputFile   The output file, or null if no explicit output file is used in the
-     *                      transformation.
+     * @param pOutputFile   The file to associate with a set of {@code OpenOption}.
      *
-     * @throws NullPointerException if {@code pSourceFile} or {@code pTemplateFile} is null.
+     * @return  A new {@code OutputFileSpec}, or null if {@code pOutputFile} is null.
      */
-    protected void logTransformation(File pSourceFile, File pTemplateFile, File pOutputFile)
+    private OutputFileSpec createOutputFile(File pOutputFile)
     {
-        if (pOutputFile != null)
-        {
-            fProject.getLogger().info(
-                "Transforming '{}' into '{}' with '{}'",
-                pSourceFile.getAbsolutePath(),
-                pOutputFile.getAbsolutePath(),
-                pTemplateFile.getAbsolutePath());
-        }
+        if (pOutputFile == null)
+            return null;
+        else if (pOutputFile.equals(fOutputFile))
+            // Writing to the global output file is always done in append mode.
+            return new OutputFileSpec(pOutputFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         else
-        {
-            fProject.getLogger().info(
-                "Transforming '{}' with '{}'",
-                pSourceFile.getAbsolutePath(),
-                pTemplateFile.getAbsolutePath());
-        }
+            // Other output files are truncated and overwritten of they exist.
+            return new OutputFileSpec(pOutputFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 }
