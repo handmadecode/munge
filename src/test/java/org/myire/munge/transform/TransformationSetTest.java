@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Peter Franzen. All rights reserved.
+ * Copyright 2019, 2021 Peter Franzen. All rights reserved.
  *
  * Licensed under the Apache License v2.0: http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -381,9 +381,9 @@ public class TransformationSetTest extends ProjectDirectoryTest
         }
 
         @Override
-        public int transform()
+        protected Transformer createTransformer(ClassLoader pClassLoader)
         {
-            return 0;
+            return null;
         }
     }
 

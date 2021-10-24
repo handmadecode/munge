@@ -24,9 +24,17 @@ page 5-21)
 1. [Transformation sets](#transformation-sets)
 1. [Saxon transformations](#saxon-transformations)
 1. [FreeMarker transformations](#freemarker-transformations)
+1. [External library versions](#external-library-versions)
 
 
 ## Release Notes
+
+### version 1.1
+
+* The Saxon and FreeMarker versions can be specified in the transform task's configuration
+  properties.
+* The Xalan and/or Jaxen libraries can be made available to FreeMarker for its XPath support.
+* Requires Gradle 6.1
 
 ### version 1.0
 
@@ -35,10 +43,10 @@ page 5-21)
 
 ## Usage
 
-The Munge plugin requires Gradle version 5.0 or newer. It is applied using the plugins DSL:
+The Munge plugin requires Gradle version 6.1 or newer. It is applied using the plugins DSL:
 
     plugins {
-      id 'org.myire.munge' version '1.0'
+      id 'org.myire.munge' version '1.1'
     }
 
 
@@ -228,7 +236,7 @@ that will be used in all transformations in that transformation set.
 Example:
 
     saxon {
-        configurationFile 'src/config/saxon.xml'
+        configurationFile = 'src/config/saxon.xml'
         sources ('resources/xml') {
             exclude '*.xsd'
         }
@@ -260,7 +268,7 @@ properties:
 Example:
 
     freemarker {
-        configurationFile 'src/config/freemarker.properties'
+        configurationFile = 'src/config/freemarker.properties'
         source 'resources/xml'
         templates ('resources/templates') {
             include '*.ftl', '*.fm'
@@ -292,3 +300,93 @@ the file can be specified in the optional parameter `charset`, default is UTF-8.
 This makes it possible for a `freemarker` transformation set to not specify any output file,
 directory or output mapping closures, and let the templates create all output files with the
 `<@outputfile>` directive.
+
+### XPath support
+
+FreeMarker supports XPath expressions in its XML document processing, see the
+[manual](https://freemarker.apache.org/docs/xgui_imperative_learn.html#xgui_imperative_learn_xpath).
+This support requires either [Xalan](http://xml.apache.org/xalan-j/index.html) or
+[Jaxen](http://www.cafeconleche.org/jaxen/) to be present on the runtime classpath.
+
+By default, the Munge plugin adds the Jaxen library to the runtime classpath. To configure the
+plugin to use Xalan instead simply specify the version of the Xalan library as described in the
+section on [External library versions](#external-library-versions).
+
+If neither Xalan nor Jaxen is available, FreeMarker has an internal fallback to use the XPath
+classes in the `com.sun.org.apache.xpath.internal` package. This fallback instantiates the
+`com.sun.org.apache.xpath.internal.XPath` class through reflection, and makes the XPath support work
+without Xalan or Jaxen if reflective access to internal JDK packages is allowed.
+
+This internal fallback works silently with the JVM default settings up to and including Java 15. In
+Java 16 however, the default value of the JVM flag `--illegal-access` was changed from `permit` to
+`deny`, which makes the internal fallback for XPath support fail, and you will see the message
+
+    No XPath support is available.
+
+when executing a `transform` task with a `freemarker` transformation set. To enable the internal
+fallback to the `com.sun.org.apache.xpath.internal` classes in Java 16, start Gradle with the JVM
+argument `--illegal-access=permit`, i.e. by specifying the command line option 
+`"-Dorg.gradle.jvmargs=--illegal-access=permit"`.
+
+The JVM flag `--illegal-access` was removed in Java 17, making the use of Xalan or Jaxen the only
+way to enable XPath support in FreeMarker transformations. Should this for some reason not be
+desirable it may be possible to enable the internal fallback to `com.sun.org.apache.xpath.internal`
+by starting Gradle with the JVM options
+
+    --add-opens java.xml/com.sun.org.apache.xpath.internal=ALL-UNNAMED
+    --add-opens java.xml/com.sun.org.apache.xml.internal.utils=ALL-UNNAMED
+
+but this hasn't been tested.
+
+
+## External library versions
+
+The Munge plugin depends on the Saxon and FreeMarker libraries and optionally on the Xalan or Jaxen
+library for XPath support in FreeMarker transformations. The version to use of these libraries can
+be configured in the `transform` task.
+
+### Saxon
+
+The artifact for the Saxon dependency is `net.sf.saxon:Saxon-HE`. By default, version 9.9.1-8 is
+used, this can be changed by setting the `transform` task's configuration property `saxonVersion`:
+
+    transform {
+        saxonVersion = '9.9.1-5'
+        ...
+    }
+
+### FreeMarker
+
+The artifact for the FreeMarker dependency is `org.freemarker:freemarker`. By default,
+version 2.3.31 is  used, this can be changed by setting the `transform` task's configuration
+property `freeMarkerVersion`:
+
+    transform {
+        freeMarkerVersion = '2.3.29'
+        ...
+    }
+
+### Xalan and Jaxen
+
+FreeMarker supports XPath expressions if either Xalan or Jaxen is available on the classpath.
+
+By default, version 1.2.0 of the Jaxen artifact `jaxen:jaxen` is included by the Munge plugin. If
+another version of Jaxen is desired it can be specified in the `transform` task's configuration
+property `jaxenVersion`:
+
+    transform {
+        jaxenVersion = '1.1.6'
+        ...
+    }
+
+
+To use Xalan instead of Jaxen, specify the version of the Xalan artifact `xalan:xalan` to use in
+the `transform` task's configuration property `xalanVersion`:
+
+    transform {
+	    xalanVersion = '2.7.2' // Use Xalan for FreeMarker XPath support
+        ...
+    }
+
+If explicit versions for both libraries are specified they will both be included in the runtime
+classpath. In this case FreeMarker chooses Xalan over Jaxen.
